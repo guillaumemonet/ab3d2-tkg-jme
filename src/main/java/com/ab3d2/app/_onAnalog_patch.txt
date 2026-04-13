@@ -1,0 +1,23 @@
+    @Override
+    public void onAnalog(String name, float value, float tpf) {
+        if (!isEnabled()) return;
+        switch (name) {
+            case A_FWD   -> moveFwd    +=  value;
+            case A_BACK  -> moveFwd    -=  value;
+            case A_RIGHT -> moveRight  +=  value;
+            case A_LEFT  -> moveRight  -=  value;
+
+            // Rotation clavier
+            case A_TURNR -> keyTurnDelta -= TURN_SPEED * value;
+            case A_TURNL -> keyTurnDelta += TURN_SPEED * value;
+
+            // Souris : direct, pas de tpf supplémentaire
+            // AXIS_Y false = delta positif = souris vers le HAUT dans JME/LWJGL3
+            // → pitch positif = regard vers le haut
+            case A_MX    -> yaw   -= MOUSE_SENSITIVITY * value;  // droite = yaw négatif
+            case A_MXN   -> yaw   += MOUSE_SENSITIVITY * value;  // gauche = yaw positif
+            case A_MY    -> pitch += MOUSE_SENSITIVITY * value;  // haut = pitch positif ← FIX inversion
+            case A_MYN   -> pitch -= MOUSE_SENSITIVITY * value;  // bas  = pitch négatif
+        }
+        pitch = FastMath.clamp(pitch, -FastMath.HALF_PI*0.85f, FastMath.HALF_PI*0.85f);
+    }

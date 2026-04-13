@@ -1,0 +1,193 @@
+plugins { id 'java'; id 'application' }
+
+group 'com.ab3d2'
+version '0.1.0-SNAPSHOT'
+
+application {
+    applicationName = 'ab3d2-tkg-jme'
+    mainClass = 'com.ab3d2.Main'
+    applicationDefaultJvmArgs = ['--enable-preview','-Xmx1g','-Dfile.encoding=UTF-8']
+    if (System.getProperty("os.name").toLowerCase().contains("mac"))
+        applicationDefaultJvmArgs += ['-XstartOnFirstThread']
+}
+
+repositories { mavenCentral(); maven { url 'https://jitpack.io' } }
+
+project.ext { jmeVer='3.8.1-stable'; lemurVer='1.16.0' }
+
+project(":assets") {
+    apply plugin: "java"
+    buildDir = rootProject.file("build/assets")
+    sourceSets { main { resources { srcDir '.' } } }
+    java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+}
+
+dependencies {
+    implementation "org.jmonkeyengine:jme3-core:$jmeVer"
+    implementation "org.jmonkeyengine:jme3-desktop:$jmeVer"
+    implementation "org.jmonkeyengine:jme3-lwjgl3:$jmeVer"
+    implementation "org.jmonkeyengine:jme3-effects:$jmeVer"
+    implementation "org.jmonkeyengine:jme3-plugins:$jmeVer"
+    implementation "org.jmonkeyengine:jme3-jogg:$jmeVer"
+    if (!System.getProperty("os.name").toLowerCase().contains("mac"))
+        implementation "org.jmonkeyengine:jme3-awt-dialogs:$jmeVer"
+    implementation "com.simsilica:lemur:$lemurVer"
+    implementation "com.simsilica:lemur-proto:1.13.0"
+    implementation "com.github.stephengold:Minie:9.0.1"
+    implementation "org.jmonkeyengine:jme3-networking:$jmeVer"
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    runtimeOnly   'ch.qos.logback:logback-classic:1.4.14'
+    runtimeOnly project(':assets')
+}
+
+def findSourceResources() {
+    if (project.hasProperty('assetsFrom')) { def p=file(project.property('assetsFrom')); if(p.isDirectory()) return p }
+    def s=file('../ab3d2-tkg-java/src/main/resources'); if(s.isDirectory()) return s
+    def e=System.getenv('AB3D2_ASSETS_SRC'); if(e){def p=file(e);if(p.isDirectory())return p}
+    return null
+}
+
+// ── copyResources ─────────────────────────────────────────────────────────────
+tasks.register('copyResources', Copy) {
+    group='ab3d2'; description='Copie les ressources binaires Amiga'
+    def src=findSourceResources()
+    if(src==null){doFirst{throw new GradleException("Source introuvable")}}
+    else{from(src){exclude 'logback.xml'};into 'src/main/resources';doFirst{logger.lifecycle("copyResources : {}",src)}}
+}
+
+// ── convertAssets ─────────────────────────────────────────────────────────────
+tasks.register('convertAssets', JavaExec) {
+    group='ab3d2'; description='Convertit assets Amiga -> PNG (walls + floors)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.AssetConverter'
+    doFirst {
+        def src = project.hasProperty('assetsFrom') ? file(project.property('assetsFrom')) : findSourceResources()
+        if(src==null||!src.isDirectory()) throw new GradleException("Source introuvable")
+        file('assets/Textures/walls').mkdirs(); file('assets/Textures/floors').mkdirs()
+        args src.absolutePath, file('assets/Textures/walls').absolutePath, file('assets/Textures/floors').absolutePath
+    }
+}
+
+// ── convertLevels ─────────────────────────────────────────────────────────────
+tasks.register('convertLevels', JavaExec) {
+    group='ab3d2'; description='Convertit niveaux binaires -> JSON'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.LevelJsonExporter'
+    doFirst {
+        def src = project.hasProperty('assetsFrom') ? file(project.property('assetsFrom')) : findSourceResources()
+        if(src==null||!src.isDirectory()) throw new GradleException("Source introuvable")
+        file('assets/levels').mkdirs()
+        args src.absolutePath, file('assets/levels').absolutePath
+    }
+}
+
+// ── convertSounds ─────────────────────────────────────────────────────────────
+tasks.register('convertSounds', JavaExec) {
+    group='ab3d2'; description='Convertit samples Amiga raw -> WAV'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.SoundConverter'
+    doFirst {
+        def src = project.hasProperty('assetsFrom') ? file(project.property('assetsFrom')) : findSourceResources()
+        if(src==null||!src.isDirectory()) throw new GradleException("Source introuvable")
+        def soundSrc = new File(src, 'sounds/raw')
+        if(!soundSrc.isDirectory()) throw new GradleException("sounds/raw introuvable")
+        file('assets/Sounds/sfx').mkdirs()
+        args soundSrc.absolutePath, file('assets/Sounds/sfx').absolutePath
+    }
+}
+
+// ── convertWads : WAD+PTR+256PAL -> PNG sprites (via TEST.LNK) ────────────────
+tasks.register('convertWads', JavaExec) {
+    group='ab3d2'; description='Convertit sprites WAD/PTR/256PAL -> PNG (necessite les fichiers WAD du jeu original)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.WadConverter'
+    doFirst {
+        def src = project.hasProperty('assetsFrom') ? file(project.property('assetsFrom')) : findSourceResources()
+        if(src==null||!src.isDirectory()) throw new GradleException('Source introuvable')
+        file('assets/Textures/objects').mkdirs()
+        args src.absolutePath, file('assets/Textures/objects').absolutePath
+    }
+}
+
+// ── analyzeAssets ─────────────────────────────────────────────────────────────
+tasks.register('analyzeAssets', JavaExec) {
+    group='ab3d2'; description='Analyse binaires AB3D2 + dump TEST.LNK'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.AssetAnalyzer'
+    doFirst {
+        def src = project.hasProperty('assetsFrom') ? file(project.property('assetsFrom')) : findSourceResources()
+        if(src != null && src.isDirectory()) args src.absolutePath
+    }
+}
+
+// ── buildScenes ───────────────────────────────────────────────────────────────
+tasks.register('buildScenes', JavaExec) {
+    group='ab3d2'; description='JSON + textures -> .j3o JME'
+    dependsOn compileJava
+    classpath   = sourceSets.main.runtimeClasspath
+    mainClass   = 'com.ab3d2.tools.LevelSceneBuilder'
+    jvmArgs     = ['--enable-preview', '-Xmx1g']
+    doFirst {
+        def levelsDir = file('assets/levels')
+        if(!levelsDir.exists() || (levelsDir.listFiles()?.count{it.name.endsWith('.json')}?:0)==0)
+            throw new GradleException("Pas de JSON -> lancer convertLevels d'abord")
+        file('assets/Scenes').mkdirs()
+        args levelsDir.absolutePath, file('assets/Scenes').absolutePath, file('assets').absolutePath
+    }
+}
+
+// ── setupAll : pipeline complet ───────────────────────────────────────────────
+// Ordre : copyResources -> convertAssets -> convertLevels -> convertSounds -> buildScenes
+// Note: convertWads est optionnel (necessite les fichiers WAD du jeu original)
+tasks.register('setupAll') {
+    group='ab3d2'; description='Pipeline complet de conversion'
+    dependsOn 'copyResources','convertAssets','convertLevels','convertSounds','buildScenes'
+}
+tasks.named('convertAssets') { mustRunAfter('copyResources') }
+tasks.named('convertLevels') { mustRunAfter('convertAssets') }
+tasks.named('convertSounds') { mustRunAfter('convertLevels') }
+tasks.named('buildScenes')   { mustRunAfter('convertSounds') }
+
+// ── resourcesStatus ───────────────────────────────────────────────────────────
+tasks.register('resourcesStatus') {
+    group='ab3d2'; description="Etat des ressources et assets"
+    doLast {
+        def res=file('src/main/resources'), src=findSourceResources()
+        println "\n=== AB3D2 Etat des ressources ==="
+        ['menu','levels','walls','floors'].each { d ->
+            def lo=new File(res,d), re=src?new File(src,d):null
+            println "  ${d.padRight(8)} local=${lo.exists()?'OK':'--'}  source=${re?.exists()?'OK':'absent'}"
+        }
+        def nW = file('assets/Textures/walls').exists()   ? file('assets/Textures/walls').listFiles()?.count{it.name.endsWith('.png')}?:0 : 0
+        def nF = file('assets/Textures/floors').exists()  ? file('assets/Textures/floors').listFiles()?.count{it.name.endsWith('.png')}?:0 : 0
+        def nO = file('assets/Textures/objects').exists() ? file('assets/Textures/objects').listFiles()?.size()?:0 : 0
+        def nL = file('assets/levels').exists()  ? file('assets/levels').listFiles()?.count{it.name.endsWith('.json')}?:0 : 0
+        def nS = file('assets/Scenes').exists()  ? file('assets/Scenes').listFiles()?.count{it.name.endsWith('.j3o')}?:0 : 0
+        println "\n  walls PNG   : $nW  floors PNG: $nF  objects: $nO"
+        println "  levels JSON : $nL  scenes j3o: $nS"
+        println "\n  Pipeline    : ./gradlew setupAll run"
+        println "  Avec WAD    : ./gradlew convertWads buildScenes run  (necessite jeu original)"
+    }
+}
+
+// ── cleanResources ────────────────────────────────────────────────────────────
+tasks.register('cleanResources', Delete) {
+    group='ab3d2'; description='Supprime assets convertis'
+    delete fileTree('src/main/resources')          { exclude 'logback.xml' }
+    delete fileTree('assets/Textures/walls')        { include '*.png' }
+    delete fileTree('assets/Textures/floors')       { include '*.png' }
+    delete fileTree('assets/Textures/objects')
+    delete fileTree('assets/levels')                { include '*.json' }
+    delete fileTree('assets/Scenes')                { include '*.j3o' }
+    delete fileTree('assets/Sounds/sfx')            { include '*.wav' }
+}
+
+compileJava { options.compilerArgs += ['--enable-preview'] }
+jar { manifest { attributes 'Main-Class': application.mainClass } }
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+wrapper { gradleVersion = '8.6' }

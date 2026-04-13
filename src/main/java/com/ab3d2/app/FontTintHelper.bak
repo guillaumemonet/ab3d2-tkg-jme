@@ -1,0 +1,29 @@
+    /**
+     * Retourne la couleur de teinte pour la police.
+     *
+     * fontpal[1] = couleur dans le système feu (index 56 → fontpal[56>>5]=fontpal[1])
+     * fontpal[7] = couleur des pixels actifs du bitmap font (colorIdx=7 = tous les plans actifs)
+     *
+     * Les deux devraient être identiques (ou très proches) dans les données originales.
+     * On prend fontpal[1] car c'est ce que le jeu affiche réellement dans l'effet feu.
+     * Si fontpal[1] = noir/transparent, on prend fontpal[7] en fallback.
+     */
+    private int fontTintColor() {
+        int[] fp = menuAssets.getFontpal();
+        if (fp == null || fp.length < 2) return 0xFF4F876B;
+
+        // fontpal[1] = couleur principale via le système palette feu
+        int c1 = fp[1] | 0xFF000000;
+        int r = (c1 >> 16) & 0xFF, g = (c1 >> 8) & 0xFF, b = c1 & 0xFF;
+        if (r + g + b > 30) return c1;  // couleur visible → utiliser
+
+        // fontpal[1] trop sombre → essayer fontpal[7] (pixels bitmap actifs)
+        if (fp.length > 7) {
+            int c7 = fp[7] | 0xFF000000;
+            r = (c7 >> 16) & 0xFF; g = (c7 >> 8) & 0xFF; b = c7 & 0xFF;
+            if (r + g + b > 30) return c7;
+        }
+
+        // Fallback mesuré sur font_green.png
+        return 0xFF4F876B;
+    }

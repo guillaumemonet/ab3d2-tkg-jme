@@ -1,0 +1,45 @@
+# CHANGELOG — Alien Breed 3D II Java/JME Port
+
+---
+
+## [2026-04-09] Session 13 — LevelMeshBuilder + GameAppState ✓
+
+### Nouveaux fichiers
+- `world/LevelMeshBuilder.java` — construit le mesh 3D JME depuis LevelData
+- `app/GameAppState.java` — état de jeu 3D (caméra FPS + mesh niveau)
+
+### LevelMeshBuilder
+- Conversion coordonnées : Amiga (X, Z, hauteurs inversées) → JME (X, Y, Z)
+- SCALE = 32 : 1 JME unit ≈ 32 world units (~1m)
+- Par zone : sol + plafond (triangulation en éventail depuis centroïde)
+- Par edge solide (joinZone=-1) : quad vertical mur
+- Luminosité : `zone.brightness / 63` → modulation couleur mat
+- Textures : charge les .256wad si disponibles, round-robin sur les murs
+  Sinon : couleur unie variant par edge pour distinguer les murs
+- Matériaux partagés via cache (réduit les draw calls)
+
+### GameAppState
+- Charge le niveau via LevelManager + LevelMeshBuilder
+- Caméra JME placée au point de départ joueur (plr1StartX/Z)
+- Hauteur caméra = -floorHeight/SCALE + 1.5 (yeux joueur)
+- Navigation WASD + flèches gauche/droite pour tourner
+- ESC → LevelSelectAppState
+
+### Flux complet
+```
+MenuAppState → PLAY GAME
+  → LevelSelectAppState (A-P)
+    → ENTER → GameAppState (mesh 3D navigable)
+      → ESC → LevelSelectAppState
+```
+
+### TODO Phase 2
+- Charger la vraie palette 256pal.bin pour les textures mur
+- ZoneGraphAdds → mapping texture par mur (texIndex)
+- CharacterControl Bullet pour la physique (gravité, collision)
+- ZoneTraversal pour tracker la zone courante
+- Renderer raycaster AB3D2 (port de hires.s / draw_wall.s)
+
+---
+
+## [2026-04-08] Sessions 7-12 — Infrastructure, menu, fire, level select

@@ -1,0 +1,16 @@
+            // Murs
+            List<int[]> walls=zWalls.get(zid); if(walls==null) continue;
+            for (int[] w : walls) {
+                int lpi=w[0], rpi=w[1], ti=w[2], topH=w[3], botH=w[4];
+                int otherZone = w.length > 5 ? w[5] : 0;  // 6ème champ si présent
+
+                // ─ Portail (bit 15 set) → transparent, rendu dynamique
+                if ((ti & 0x8000) != 0) { skipPortal++; continue; }
+
+                // ─ Porte (otherZone != 0) → rendu dynamique plus tard
+                if (otherZone != 0) { skipPortal++; continue; }
+
+                // Vérification hauteurs valides
+                if (topH == botH) continue;
+                float wallH = (float)Math.abs(topH - botH);
+                if (wallH > 8192f || Math.abs(topH) > 16384f) continue;

@@ -1,0 +1,9 @@
+    @Override
+    public void onAction(String name, boolean p, float t) {
+        if (!p || !isEnabled()) return;
+        if (A_EXIT.equals(name)) {
+            var sm = app.getStateManager();
+            sm.attach(new LevelSelectAppState(assetsRoot, jmeAssets));
+            sm.detach(this);
+        }
+    }

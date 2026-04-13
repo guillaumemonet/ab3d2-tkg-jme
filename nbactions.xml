@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE project>
+<!--
+    nbactions.xml — Actions personnalisées pour NetBeans (Gradle)
+    Ces actions apparaissent dans : clic-droit sur le projet → Custom
+-->
+<actions>
+
+    <!-- Copier les ressources binaires Amiga depuis ab3d2-tkg-java -->
+    <action>
+        <actionName>CUSTOM-copyResources</actionName>
+        <displayName>AB3D2 : Copier ressources binaires</displayName>
+        <goals>
+            <goal>copyResources</goal>
+        </goals>
+    </action>
+
+    <!-- Convertir .256wad → PNG dans assets/Textures/walls/ -->
+    <action>
+        <actionName>CUSTOM-convertAssets</actionName>
+        <displayName>AB3D2 : Convertir textures → PNG</displayName>
+        <goals>
+            <goal>convertAssets</goal>
+        </goals>
+    </action>
+
+    <!-- Vérifier l'état des ressources et PNG disponibles -->
+    <action>
+        <actionName>CUSTOM-resourcesStatus</actionName>
+        <displayName>AB3D2 : État des ressources</displayName>
+        <goals>
+            <goal>resourcesStatus</goal>
+        </goals>
+    </action>
+
+    <!-- Workflow complet : copier + convertir -->
+    <action>
+        <actionName>CUSTOM-setupAssets</actionName>
+        <displayName>AB3D2 : Setup complet (copier + convertir)</displayName>
+        <goals>
+            <goal>copyResources</goal>
+            <goal>convertAssets</goal>
+        </goals>
+    </action>
+
+</actions>

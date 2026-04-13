@@ -1,0 +1,23 @@
+    @Override
+    public void onAnalog(String name, float value, float tpf) {
+        if (!isEnabled()) return;
+        switch (name) {
+            case A_FWD   -> moveFwd    +=  value;
+            case A_BACK  -> moveFwd    -=  value;
+            case A_RIGHT -> moveRight  +=  value;
+            case A_LEFT  -> moveRight  -=  value;
+
+            // Clavier : value ≈ tpf → TURN_SPEED*value = rotation par frame
+            case A_TURNR -> keyTurnDelta -= TURN_SPEED * value;
+            case A_TURNL -> keyTurnDelta += TURN_SPEED * value;
+
+            // Souris : direct sur yaw/pitch (pas de tpf supplémentaire)
+            // AXIS_X positive = souris vers la DROITE → yaw+ (virage à droite)
+            // AXIS_Y positive = souris vers le HAUT   → pitch+ (regard en haut)
+            case A_MX    -> yaw   += MOUSE_SENSITIVITY * value;   // droite = yaw+ ← FIX
+            case A_MXN   -> yaw   -= MOUSE_SENSITIVITY * value;   // gauche = yaw-
+            case A_MY    -> pitch += MOUSE_SENSITIVITY * value;   // haut   = pitch+
+            case A_MYN   -> pitch -= MOUSE_SENSITIVITY * value;   // bas    = pitch-
+        }
+        pitch = FastMath.clamp(pitch, -FastMath.HALF_PI*0.85f, FastMath.HALF_PI*0.85f);
+    }

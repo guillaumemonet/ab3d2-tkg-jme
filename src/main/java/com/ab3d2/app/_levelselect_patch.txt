@@ -1,0 +1,20 @@
+    private final Path assetsRoot;
+    private final Path jmeAssets;
+
+    public LevelSelectAppState(Path assetsRoot, Path jmeAssets) {
+        this.assetsRoot = assetsRoot;
+        this.jmeAssets  = jmeAssets;
+    }
+
+    private void goBack() {
+        var sm = app.getStateManager();
+        sm.attach(new MenuAppState(assetsRoot, jmeAssets));
+        sm.detach(this);
+    }
+
+    private void goPlay() {
+        log.info("→ GameAppState level {}", LEVEL_NAMES[selectedIndex]);
+        var sm = app.getStateManager();
+        sm.attach(new GameAppState(assetsRoot, jmeAssets, selectedIndex));
+        sm.detach(this);
+    }

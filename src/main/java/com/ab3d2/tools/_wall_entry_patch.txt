@@ -1,0 +1,10 @@
+                sb.append("      {\"leftPt\":").append(e.leftPt)
+                  .append(",\"rightPt\":").append(e.rightPt)
+                  .append(",\"texIndex\":").append(e.texIndex)
+                  .append(",\"topWallH\":").append(e.topWall >> 8)
+                  .append(",\"botWallH\":").append(e.botWall >> 8)
+                  .append(",\"otherZone\":").append(e.otherZone)
+                  .append(",\"fromTile\":").append(e.fromTile)
+                  .append(",\"yOffset\":").append(e.yOffset)
+                  .append(",\"brightOfs\":").append(e.brightOfs)
+                  .append("}");
