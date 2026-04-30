@@ -44,7 +44,10 @@ public class DoorControl extends AbstractControl {
     // Vitesses par defaut (en unites JME/seconde)
     private static final float DEFAULT_OPEN_SPEED  = 2.0f;
     private static final float DEFAULT_CLOSE_SPEED = 1.2f;
-    private static final float TRIGGER_DIST        = 2.5f;
+    // Distance de declenchement = max(TRIGGER_DIST_MIN, halfWidthDoor + TRIGGER_MARGIN)
+    // Pour les grandes portes (zone 132 = 14 JME large), il faut plus de marge.
+    private static final float TRIGGER_DIST_MIN = 3.0f;
+    private static final float TRIGGER_MARGIN   = 1.5f;
     private static final float COLLISION_THRESHOLD = 0.5f;
 
     // Conditions (de defs.i)
@@ -66,6 +69,8 @@ public class DoorControl extends AbstractControl {
     private int   lowerCondition = LOWER_TIMEOUT;
     private float openDuration   = 3.0f;   // secondes
     private float openTimer      = 0f;     // chrono depuis ouverture complete
+    private float triggerDist    = TRIGGER_DIST_MIN; // calcule au setSpatial
+    private float stateMaxCached  = 1f;     // calcule une seule fois au setSpatial
 
     private final WallCollision doorCollision;
     private DoorSound doorSound;          // initialise au premier update()
@@ -95,9 +100,53 @@ public class DoorControl extends AbstractControl {
         if (rc  != null) raiseCondition = rc;
         if (lc  != null) lowerCondition = lc;
         if (dur != null) {
-            openDuration = (dur == 0) ? Float.MAX_VALUE : dur / 50f;
+            // Amiga tourne a 25 Hz logique (pas 50). zl_OpenDuration est en ticks 25Hz.
+            openDuration = (dur == 0) ? Float.MAX_VALUE : dur / 25f;
             if (lowerCondition == LOWER_NEVER) openDuration = Float.MAX_VALUE;
         }
+
+        // Conversion vitesse Amiga -> JME (calcul base sur la course COMPLETE)
+        Integer zlOpenSpd  = spatial.getUserData("openSpeed");
+        Integer zlCloseSpd = spatial.getUserData("closeSpeed");
+        Integer zlBot      = spatial.getUserData("zlBottom");
+        Integer zlTop      = spatial.getUserData("zlTop");
+        if (zlOpenSpd != null && zlBot != null && zlTop != null) {
+            float hEditor = Math.abs(zlTop - zlBot);
+            if (hEditor > 0.1f) {
+                if (zlOpenSpd > 0) {
+                    openSpeed = (zlOpenSpd * 25f) / hEditor;
+                }
+                if (zlCloseSpd != null && zlCloseSpd > 0) {
+                    closeSpeed = (zlCloseSpd * 25f) / hEditor;
+                } else if (zlCloseSpd != null && zlCloseSpd == 0) {
+                    // zl_ClosingSpeed = 0 : la porte ne se referme jamais
+                    closeSpeed = 0f;
+                    lowerCondition = LOWER_NEVER;
+                }
+            }
+        }
+
+        // Session 98 : calcul du triggerDist proportionnel a la taille de la porte.
+        // Pour les grandes portes (zone 132 = 14 JME large), TRIGGER_DIST=2.5 est
+        // trop court : le joueur bute contre la porte avant qu'elle ne se declenche.
+        // On prend la moitie de la largeur de la porte + une marge.
+        float maxHalfWidth = 0f;
+        if (spatial instanceof Node n) {
+            for (Spatial child : n.getChildren()) {
+                if (!(child instanceof Geometry geo)) continue;
+                Float x0 = geo.getUserData("x0"), z0 = geo.getUserData("z0");
+                Float x1 = geo.getUserData("x1"), z1 = geo.getUserData("z1");
+                if (x0 == null) continue;
+                float dx = x1 - x0, dz = z1 - z0;
+                float halfLen = (float) Math.sqrt(dx*dx + dz*dz) / 2f;
+                if (halfLen > maxHalfWidth) maxHalfWidth = halfLen;
+            }
+        }
+        triggerDist = Math.max(TRIGGER_DIST_MIN, maxHalfWidth + TRIGGER_MARGIN);
+
+        // Session 98 : calcul du stateMax effectif une seule fois ici
+        // (la porte rouge zone 132 a animDist=22 JME mais panelHeight=6 JME)
+        stateMaxCached = computeMaxState();
         // Note : DoorSound sera initialise au premier controlUpdate() quand
         // l'AssetManager est disponible via spatial.getUserData / SceneGraph
     }
@@ -116,16 +165,17 @@ public class DoorControl extends AbstractControl {
         float minDist = minDistToPlayer(doorNode);
         float prev    = state;
         boolean opening = false, closing = false;
+        float stateMax  = stateMaxCached;
 
-        if (state < 0.999f) {
+        if (state < stateMax * 0.999f) {
             boolean shouldOpen = switch (raiseCondition) {
-                case RAISE_PLAYER_USE, RAISE_PLAYER_TOUCH -> minDist < TRIGGER_DIST;
-                default -> minDist < TRIGGER_DIST;
+                case RAISE_PLAYER_USE, RAISE_PLAYER_TOUCH -> minDist < triggerDist;
+                default -> minDist < triggerDist;
             };
             if (shouldOpen) {
-                state = Math.min(1f, state + openSpeed * tpf);
+                state = Math.min(stateMax, state + openSpeed * tpf);
                 opening = true;
-                if (state >= 0.999f) openTimer = 0f;
+                if (state >= stateMax * 0.999f) openTimer = 0f;
             } else if (state > 0f && lowerCondition == LOWER_TIMEOUT) {
                 state = Math.max(0f, state - closeSpeed * tpf);
                 closing = true;
@@ -133,7 +183,7 @@ public class DoorControl extends AbstractControl {
         } else {
             openTimer += tpf;
             if (lowerCondition == LOWER_TIMEOUT && openTimer >= openDuration) {
-                if (minDist >= TRIGGER_DIST) {
+                if (minDist >= triggerDist) {
                     state = Math.max(0f, state - closeSpeed * tpf);
                     closing = true;
                 } else {
@@ -146,16 +196,35 @@ public class DoorControl extends AbstractControl {
         if (opening && !wasOpening && prev <= 0.01f && doorSound != null) {
             doorSound.playOpen();
         }
-        if (closing && !wasClosing && prev >= 0.999f && doorSound != null) {
+        if (closing && !wasClosing && prev >= stateMax * 0.999f && doorSound != null) {
             doorSound.playClose();
         }
         wasOpening = opening;
         wasClosing = closing;
 
-        if (Math.abs(state - prev) > 0.002f) updateMeshes(doorNode);
+        // SESSION 103 : seuil abaisse pour eviter l'effet "par a-coups" sur
+        // les portes lentes. Exemple zone 132 (rouge) : openSpeed=4 Amiga,
+        // hEditor=704, donc state grandit de 0.142/sec, soit ~0.0024 par frame
+        // a 60 FPS - juste au-dessus de l'ancien seuil 0.002. Avec la moindre
+        // variance de tpf, on saute des updates et l'animation parait saccadee.
+        // 0.0001 garantit un update a chaque frame meme pour les portes les
+        // plus lentes. Le cout du updateMeshes est negligeable (4 vertex/4 UV).
+        if (Math.abs(state - prev) > 0.0001f) updateMeshes(doorNode);
 
-        doorNode.setCullHint(state >= 0.999f ? Spatial.CullHint.Always : Spatial.CullHint.Dynamic);
-        if (state < COLLISION_THRESHOLD) addCollisionSegments(doorNode);
+        // Cull la porte quand elle est totalement ouverte (panneaux disparus dans le plafond)
+        doorNode.setCullHint(state >= stateMax * 0.999f ? Spatial.CullHint.Always : Spatial.CullHint.Dynamic);
+        if (state < COLLISION_THRESHOLD * stateMax) addCollisionSegments(doorNode);
+    }
+
+    /**
+     * Session 100 : avec l'animation par-segment (riseAmount = panelHeight * state),
+     * chaque segment atteint son repli complet a state=1, donc on n'a plus besoin
+     * de plafonner. Tous les segs d'un meme groupe de porte se replient ensemble
+     * a state=1, ce qui donne un effet de "bloc de porte" coherent (vs l'effet
+     * rideau quand on melangeait des segs de hauteurs differentes).
+     */
+    private float computeMaxState() {
+        return 1f;
     }
 
     /** Initialise DoorSound avec l'AssetManager depuis le RootNode. */
@@ -197,21 +266,92 @@ public class DoorControl extends AbstractControl {
     // ── Mise a jour des meshes ────────────────────────────────────────────────
 
     private void updateMeshes(Node doorNode) {
-        float fullH = yTop - yBot;
-        if (fullH < 0.001f) return;
+        // Session 98 : approche ASM-fidele.
+        //
+        // Dans newanims.s::DoorRoutine, l'animation modifie ZoneT_Roof_l de la zone-porte
+        // et patche le `topWallH`/`botWallH` des ZDoorWalls voisins. Concretement :
+        //   - Quand fermee (state=0) : panneau plein du sol au plafond du couloir
+        //   - Quand ouverte (state=1) : panneau de hauteur 0 (s'est replie dans le plafond)
+        //
+        // Donc seul le BAS du panneau monte vers le haut. Le SOMMET reste fixe au
+        // plafond du couloir. C'est l'illusion d'une porte qui rentre dans le plafond.
+        //
+        // La texture doit rester immobile dans le monde -> on ajuste le V du bas pour
+        // que ce soit toujours la meme portion de texture qui soit visible a la meme
+        // hauteur monde.
 
-        // Le panneau entier translate vers le haut :
-        // state=0 : porte en position fermee [yBot, yTop]
-        // state=1 : porte au-dessus du plafond [yTop, yTop+fullH] = invisible
-        float offset  = fullH * state;
-        float curYBot = yBot + offset;
-        float curYTop = yTop + offset;
+        // SESSION 104 : pre-pass pour calculer le panelHeight COMMUN (max parmi
+        // tous les segs de la porte). Tous les segs utilisent ce max comme
+        // distance de reference dans le calcul de riseAmount -> meme vitesse JME
+        // et meme Y final pour tous les pans, même si leurs hauteurs propres
+        // diffèrent (cas porte entre 2 couloirs de floorH/roofH distincts).
+        float maxPanelHeight = 0f;
+        for (Spatial child : doorNode.getChildren()) {
+            if (!(child instanceof Geometry geo)) continue;
+            Float yBotSeg = geo.getUserData("yBotSeg");
+            Float yTopSeg = geo.getUserData("yTopSeg");
+            if (yBotSeg == null || yTopSeg == null) continue;
+            float h = yTopSeg - yBotSeg;
+            if (h > maxPanelHeight) maxPanelHeight = h;
+        }
 
         for (Spatial child : doorNode.getChildren()) {
             if (!(child instanceof Geometry geo)) continue;
+
+            // SESSION 105 : branchement par faceType pour gerer les caps du cube.
+            //   "top"    : pas d'animation, fixe au plafond -> skip
+            //   "bottom" : translate Y pour suivre curYBot -> setLocalTranslation
+            //   "front"/null : face verticale, animation des vertex (logique existante)
+            String faceType = geo.getUserData("faceType");
+            if ("top".equals(faceType)) continue;
+            if ("bottom".equals(faceType)) {
+                Float yBotB = geo.getUserData("yBotSeg");
+                Float yTopB = geo.getUserData("yTopSeg");
+                if (yBotB == null || yTopB == null) continue;
+                float pH = yTopB - yBotB;
+                if (pH < 0.001f) continue;
+                float rA = maxPanelHeight * state;
+                float eR = Math.min(rA, pH);
+                geo.setLocalTranslation(0f, eR, 0f);
+                continue;
+            }
+
             Float x0 = geo.getUserData("x0"), z0 = geo.getUserData("z0");
             Float x1 = geo.getUserData("x1"), z1 = geo.getUserData("z1");
             if (x0 == null) continue;
+
+            Float yBotSeg  = geo.getUserData("yBotSeg");
+            Float yTopSeg  = geo.getUserData("yTopSeg");
+            Float animDist = geo.getUserData("animDist");
+            float segBot   = (yBotSeg != null)  ? yBotSeg  : yBot;
+            float segTop   = (yTopSeg != null)  ? yTopSeg  : yTop;
+            float dist     = (animDist != null) ? animDist : (segTop - segBot);
+            if (dist < 0.001f) continue;
+
+            // SESSION 104 : evolution du modele d'animation.
+            //
+            // Sess 98 : riseAmount = min(dist*state, panelHeight). animDist commun
+            //   mais panelHeight variable -> certains segs collapsaient avant d'autres
+            //   pendant la transition (effet "rideau qui se froisse").
+            //
+            // Sess 100 : riseAmount = panelHeight * state (par-seg). Mais les segs
+            //   de hauteurs differentes montaient a des VITESSES differentes en JME,
+            //   et atteignaient des Y finals differents.
+            //
+            // Sess 104 (maintenant) : riseAmount = maxPanelHeight * state (commun).
+            //   Tous les segs montent a la meme vitesse JME et visent le meme Y final.
+            //   effectiveRise est clampe a la panelHeight propre pour ne pas inverser
+            //   le quad : un seg de hauteur < maxPanelHeight collapse a son segTop
+            //   plus tot que les segs longs, mais visuellement c'est coherent (le
+            //   pan disparait dans le plafond).
+            //
+            // La duree d'ouverture (state 0 -> 1) reste fixee par openSpeed. Le seg
+            // le plus haut atteint son sommet exactement a state=1.
+            float panelHeight = segTop - segBot;
+            float riseAmount  = maxPanelHeight * state;
+            float effectiveRise = Math.min(riseAmount, panelHeight);
+            float curYBot    = segBot + effectiveRise;
+            float curYTop    = segTop;  // SOMMET FIXE
 
             FloatBuffer pb = geo.getMesh().getFloatBuffer(Type.Position);
             pb.rewind();
@@ -221,8 +361,55 @@ public class DoorControl extends AbstractControl {
             pb.put(x0); pb.put(curYTop); pb.put(z0);
             pb.rewind();
             geo.getMesh().setBuffer(Type.Position, 3, pb);
-            // Forcer le GPU a re-uploader le buffer (obligatoire pour setDynamic)
             geo.getMesh().getBuffer(Type.Position).setUpdateNeeded();
+
+            // Animation UV :
+            // Le sommet du quad montre TOUJOURS la portion haute de texture (uvBase[5], uvBase[7]).
+            // Le bas du quad, qui est maintenant a curYBot (au lieu de segBot), doit montrer
+            // la portion de texture correspondant a cette nouvelle hauteur monde.
+            //
+            // riseAmount JME = riseAmount * SCALE pixels Amiga
+            // -> shift en V = riseAmount_pixels / tileH
+            //
+            // Le sommet (TL/TR = uvBase[5..7]) garde son V (vBaseTop).
+            // Le bas (BL/BR = uvBase[1..3]) prend V = vBaseBot + vShift.
+            // (le bas "glisse" vers une portion plus haute dans la texture).
+            Float tileH = geo.getUserData("tileH");
+            String uvCsv = geo.getUserData("uvBase");
+            float[] uvBase = (uvCsv != null)
+                ? com.ab3d2.tools.LevelSceneBuilder.csvToFloatArray(uvCsv)
+                : null;
+            if (uvBase != null && uvBase.length == 8 && tileH != null && tileH > 0) {
+                // SESSION 107 : la TEXTURE accompagne le quad qui monte (= la
+                // porte monte visuellement, sa partie haute disparait dans le
+                // plafond). C'est l'inverse de la session 104.
+                //
+                // Sess 104 : BL.v += vShift -> la texture reste FIXE dans le
+                //   monde, et la partie BASSE (V=0..vShift) sort du quad par
+                //   le bas. Effet visuel = la texture s'efface a partir du bas.
+                //
+                // Sess 107 : TL.v -= vShift -> la texture SUIT le quad qui
+                //   monte. BL.v reste a 0 (le bas du quad voit toujours la
+                //   base du chevron). TL.v decroit -> la partie HAUTE de la
+                //   texture (V=vM-vShift..vM) sort par le haut du quad =
+                //   "glisse dans le mur du haut".
+                //
+                // Verification : a state=1, vShift = panelHeight*32/tileH = vM,
+                // donc TL.v = 0 et le quad collapse en V (texture invisible).
+                // CullHint.Always (state>=0.999) cache le tout.
+                float vShift = (effectiveRise * 32f) / tileH;
+                FloatBuffer ub = geo.getMesh().getFloatBuffer(Type.TexCoord);
+                ub.rewind();
+                // BL et BR : V inchange (= 0, on voit toujours la base du chevron)
+                ub.put(uvBase[0]); ub.put(uvBase[1]);
+                ub.put(uvBase[2]); ub.put(uvBase[3]);
+                // TL et TR : V -= vShift (la partie haute de la texture sort par le haut du quad)
+                ub.put(uvBase[4]); ub.put(uvBase[5] - vShift);
+                ub.put(uvBase[6]); ub.put(uvBase[7] - vShift);
+                ub.rewind();
+                geo.getMesh().setBuffer(Type.TexCoord, 2, ub);
+                geo.getMesh().getBuffer(Type.TexCoord).setUpdateNeeded();
+            }
             geo.getMesh().updateBound();
         }
     }

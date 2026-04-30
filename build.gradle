@@ -38,6 +38,19 @@ dependencies {
     implementation 'org.slf4j:slf4j-api:2.0.9'
     runtimeOnly   'ch.qos.logback:logback-classic:1.4.14'
     runtimeOnly project(':assets')
+
+    // Tests (session 113 : machine a etats IA aliens)
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testRuntimeOnly  'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    jvmArgs '--enable-preview'
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = true
+    }
 }
 
 def findSourceResources() {
@@ -141,12 +154,417 @@ tasks.register('buildScenes', JavaExec) {
     }
 }
 
+// ── convertTextureMaps : newtexturemaps -> PNG atlas ────────────────────────
+tasks.register('convertTextureMaps', JavaExec) {
+    group='ab3d2'; description='Convertit les textures vectobj (newtexturemaps) -> PNG atlas'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.TextureMapConverter'
+    doFirst {
+        def vectDir = file('src/main/resources/vectobj')
+        if (!vectDir.isDirectory() || !new File(vectDir, 'newtexturemaps').exists())
+            throw new GradleException('newtexturemaps introuvable dans src/main/resources/vectobj/')
+        file('assets/Textures/vectobj').mkdirs()
+        args vectDir.absolutePath,
+             file('src/main/resources').absolutePath,
+             file('assets/Textures/vectobj').absolutePath
+    }
+}
+
+// ── convertVectObj : fichiers binaires vectobj -> .j3o ──────────────────────
+tasks.register('convertVectObj', JavaExec) {
+    group='ab3d2'; description='Convertit les modeles 3D vectoriels vectobj -> .j3o JME'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjConverter'
+    jvmArgs    = ['--enable-preview', '-Xmx512m']
+    doFirst {
+        def vectDir = file('src/main/resources/vectobj')
+        if (!vectDir.isDirectory())
+            throw new GradleException('vectobj/ introuvable dans src/main/resources/')
+        file('assets/Scenes/vectobj').mkdirs()
+        args vectDir.absolutePath,
+             file('assets/Scenes/vectobj').absolutePath,
+             file('assets').absolutePath
+    }
+}
+
+// dumpVectObj : diagnostic format binaire vectobj
+tasks.register('dumpVectObj', JavaExec) {
+    group='ab3d2'; description='Dump le format binaire d\'un fichier vectobj (diagnostic)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjDumper'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    // Usage : ./gradlew dumpVectObj -Pvectobj=passkey
+    // Defaut : dump passkey + switch + plink
+    doFirst {
+        if (project.hasProperty('vectobj')) {
+            def name = project.property('vectobj')
+            args file("src/main/resources/vectobj/${name}").absolutePath
+        }
+    }
+}
+
+// analyzeVectObj : vue synthetique onOff masks multi-frame
+tasks.register('analyzeVectObj', JavaExec) {
+    group='ab3d2'; description='Analyse rapide : header + onOff masks des vectobj'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjQuickAnalyze'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        args file('src/main/resources/vectobj').absolutePath
+    }
+}
+
+// exploreTextureLayout : teste plusieurs hypotheses de layout newtexturemaps
+tasks.register('exploreTextureLayout', JavaExec) {
+    group='ab3d2'; description='Teste plusieurs hypotheses de layout pour newtexturemaps'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.TextureLayoutExplorer'
+    jvmArgs    = ['--enable-preview', '-Xmx512m']
+    doFirst {
+        file('build/texture-explore').mkdirs()
+        args file('src/main/resources/vectobj').absolutePath,
+             file('build/texture-explore').absolutePath,
+             file('src/main/resources').absolutePath
+    }
+}
+
+// scanVectObjTex : diagnostic textures par polygone pour un modele
+// Usage : ./gradlew scanVectObjTex -Pvectobj=Mantis
+//         ./gradlew scanVectObjTex -Pvectobj=ALL
+tasks.register('scanVectObjTex', JavaExec) {
+    group='ab3d2'; description='Scanne les texOffsets des polygones d\'un vectobj + genere atlas annote'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjTextureScan'
+    jvmArgs    = ['--enable-preview', '-Xmx512m']
+    standardOutput = System.out
+    doFirst {
+        file('build/tex-scan').mkdirs()
+        def target = project.hasProperty('vectobj') ? project.property('vectobj') : 'Mantis'
+        args file('src/main/resources/vectobj').absolutePath,
+             file('build/tex-scan').absolutePath,
+             file('src/main/resources').absolutePath,
+             target
+    }
+}
+
+// dumpVectObjUVs : dump detaille des UVs par polygone pour debug
+// Usage : ./gradlew dumpVectObjUVs -Pvectobj=rifle
+tasks.register('dumpVectObjUVs', JavaExec) {
+    group='ab3d2'; description='Dump les UVs de tous les polygones d\'un vectobj'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjUVDump'
+    jvmArgs    = ['--enable-preview', '-Xmx512m']
+    standardOutput = System.out
+    doFirst {
+        def target = project.hasProperty('vectobj') ? project.property('vectobj') : 'rifle'
+        args file('src/main/resources/vectobj').absolutePath, target
+    }
+}
+
+// dumpTexInventory : inventaire de tous les texOffsets utilises par un vectobj
+// Usage : ./gradlew dumpTexInventory -Pvectobj=crab
+tasks.register('dumpTexInventory', JavaExec) {
+    group='ab3d2'; description='Inventaire des texOffsets et hypotheses layout (64x64 tiles)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjTexOffsetInventory'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        def target = project.hasProperty('vectobj') ? project.property('vectobj') : 'crab'
+        args file('src/main/resources/vectobj').absolutePath, target
+    }
+}
+
+// dumpGlf : affiche le contenu du Game Link File (TEST.LNK)
+// Usage : ./gradlew dumpGlf
+tasks.register('dumpGlf', JavaExec) {
+    group='ab3d2'; description='Affiche le contenu du GLF (armes, bullets, etc.)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.GlfDumpTool'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        args file('src/main/resources/TEST.LNK').absolutePath
+    }
+}
+
+// dumpGlfRaw : dump hex brut des GunNames + ShootDefs + BulletNames
+// Permet de verifier que notre parser lit les bons offsets (diagnostic bas niveau).
+// Usage : ./gradlew dumpGlfRaw
+tasks.register('dumpGlfRaw', JavaExec) {
+    group='ab3d2'; description='Dump hex brut du GLF (guns + bullets) pour diagnostic'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.GlfRawGunDump'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        args file('src/main/resources/TEST.LNK').absolutePath
+    }
+}
+
+// dumpVectObjStructure : affiche la structure d'un .j3o vectobj (parts/tris/render state)
+// Usage : ./gradlew dumpVectObjStructure -Pname=shotgun
+tasks.register('dumpVectObjStructure', JavaExec) {
+    group='ab3d2'; description='Affiche la structure d\'un .j3o vectobj (parts + render state)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjStructureDump'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        if (project.hasProperty('name')) args project.property('name')
+    }
+}
+
+// extractAtlasGrid : cree une vue globale de l'atlas avec numeros des tiles
+// Usage : ./gradlew extractAtlasGrid
+tasks.register('extractAtlasGrid', JavaExec) {
+    group='ab3d2'; description='Atlas zoome avec numerotation des 32 tiles'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.AtlasGridExtractor'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        args file('assets/Textures/vectobj/texturemaps_atlas.png').absolutePath,
+             file('assets/Textures/vectobj/atlas_numbered.png').absolutePath
+    }
+}
+
+// extractTile : extrait les tiles d'un atlas en PNG zoome pour visualisation
+// Usage : ./gradlew extractTile -Ptile=22,26,27
+tasks.register('extractTile', JavaExec) {
+    group='ab3d2'; description='Extrait et zoome des tiles specifiques de l\'atlas'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.AtlasTileExtractor'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        def tiles = project.hasProperty('tile') ? project.property('tile') : '22,26'
+        args file('assets/Textures/vectobj/texturemaps_atlas.png').absolutePath,
+             tiles,
+             file('assets/Textures/vectobj/tiles').absolutePath
+    }
+}
+
+// dumpVectObjFlags : flags (PreHoles/PreGouraud) des polys d'un vectobj
+// Usage : ./gradlew dumpVectObjFlags -Pvectobj=crab
+tasks.register('dumpVectObjFlags', JavaExec) {
+    group='ab3d2'; description='Affiche les flags (holes/glare) des polys d\'un vectobj'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjFlagsInventory'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        def target = project.hasProperty('vectobj') ? project.property('vectobj') : 'crab'
+        args file('src/main/resources/vectobj').absolutePath, target
+    }
+}
+
+// diagAtlas : inventaire des tiles 64x64 d'un atlas
+// Usage : ./gradlew diagAtlas
+tasks.register('diagAtlas', JavaExec) {
+    group='ab3d2'; description='Inventaire des tiles 64x64 de l\'atlas (pixels noirs, couleurs moyennes)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.AtlasTileDiagnostic'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        args file('assets/Textures/vectobj/texturemaps_atlas.png').absolutePath
+    }
+}
+
+// diagWallTextures : audit des textures de murs (session 92)
+// Verifie dimensions (largeur, hauteur=128), multiples de 16, alpha, distribution
+// Usage : ./gradlew diagWallTextures
+tasks.register('diagWallTextures', JavaExec) {
+    group='ab3d2'; description='Audit des textures de murs (UV, wrap, dimensions)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.WallTextureDiagnostic'
+    jvmArgs    = ['--enable-preview', '-Xmx128m']
+    standardOutput = System.out
+    doFirst {
+        args file('assets/Textures/walls').absolutePath
+    }
+}
+
+// diagWallUsage : audit de l'utilisation des textures walls par les niveaux
+// Croise les JSON level_*.json et les PNG walls pour detecter anomalies
+// Usage : ./gradlew diagWallUsage              # Tous les niveaux
+//         ./gradlew diagWallUsage -Plevel=A    # Un seul niveau
+tasks.register('diagWallUsage', JavaExec) {
+    group='ab3d2'; description='Audit coherence walls/niveaux (clipIdx, wrap UV, stats)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.WallUsageDiagnostic'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        args file('assets/Textures/walls').absolutePath, file('assets/levels').absolutePath
+        if (project.hasProperty('level')) args project.property('level')
+    }
+}
+
+// diagWallTiles : extrait les tiles logiques (128px) d'une texture de mur
+// Usage : ./gradlew diagWallTiles              # Tous les murs
+//         ./gradlew diagWallTiles -Pwall=02    # Un seul (hullmetal)
+tasks.register('diagWallTiles', JavaExec) {
+    group='ab3d2'; description='Extrait et annote les tiles logiques (128px) des textures walls'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.WallTileDiagnostic'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        file('build/wall-tiles').mkdirs()
+        args file('assets/Textures/walls').absolutePath,
+             file('build/wall-tiles').absolutePath
+        if (project.hasProperty('wall')) args project.property('wall')
+    }
+}
+
+// dumpTexOffsets : inventaire des texOffsets d'un vectobj
+// Usage : ./gradlew dumpTexOffsets -Pvectobj=crab
+tasks.register('dumpTexOffsets', JavaExec) {
+    group='ab3d2'; description='Inventaire des texOffsets + deltas UV d\'un vectobj'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjTexOffsetInventory'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        def target = project.hasProperty('vectobj') ? project.property('vectobj') : 'crab'
+        args file('src/main/resources/vectobj').absolutePath, target
+    }
+}
+
+// extractIff : decode les IFF ILBM Amiga (HUD, bordures, faces, armes...) -> PNG
+// Usage : ./gradlew extractIff              # extrait tous les IFF standard
+//         ./gradlew extractIff -Piff=Panel  # un seul fichier specifique
+tasks.register('extractIff', JavaExec) {
+    group='ab3d2'; description='Extrait les HUD/bordures/sprites IFF ILBM Amiga en PNG'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.IffExtractor'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    doFirst {
+        def gfxDir = file('../ab3d2-tkg-original/media/graphics')
+        if (!gfxDir.isDirectory()) {
+            def p = project.hasProperty('gfxFrom') ? file(project.property('gfxFrom')) : null
+            if (p != null && p.isDirectory()) gfxDir = p
+            else throw new GradleException('media/graphics introuvable (attendu ../ab3d2-tkg-original/media/graphics)')
+        }
+        file('assets/Interface').mkdirs()
+        args gfxDir.absolutePath, file('assets/Interface').absolutePath
+        if (project.hasProperty('iff')) args project.property('iff')
+    }
+}
+
+// dumpPalette : affiche le contenu hexa d'un fichier palette Amiga pour analyser son format
+// Usage : ./gradlew dumpPalette                    # par defaut, panelcols
+//         ./gradlew dumpPalette -Ppal=borderpal
+tasks.register('dumpPalette', JavaExec) {
+    group='ab3d2'; description='Dump hex d\'un fichier palette Amiga pour analyser son format'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.PaletteDump'
+    jvmArgs    = ['--enable-preview', '-Xmx64m']
+    standardOutput = System.out
+    doFirst {
+        def incDir = file('../ab3d2-tkg-original/media/includes')
+        if (!incDir.isDirectory()) throw new GradleException('media/includes introuvable')
+        args incDir.absolutePath
+        if (project.hasProperty('pal')) args project.property('pal')
+    }
+}
+
+// extractRaw : decode les fichiers raw chunky/planar Amiga (HUD, bordures, visages...)
+// Usage : ./gradlew extractRaw                     # Extrait tous les candidats
+//         ./gradlew extractRaw -Praw=panelraw      # Un seul fichier
+// Les fichiers RAW source sont dans media/includes (PAS dans media/graphics).
+// Genere plusieurs PNG candidats par fichier pour identification visuelle.
+tasks.register('extractRaw', JavaExec) {
+    group='ab3d2'; description='Decode les RAW chunky/planar Amiga (HUD, bordures) en PNG'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.RawExtractor'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    doFirst {
+        def incDir = file('../ab3d2-tkg-original/media/includes')
+        if (!incDir.isDirectory()) {
+            def p = project.hasProperty('rawFrom') ? file(project.property('rawFrom')) : null
+            if (p != null && p.isDirectory()) incDir = p
+            else throw new GradleException('media/includes introuvable (attendu ../ab3d2-tkg-original/media/includes)')
+        }
+        file('assets/Interface').mkdirs()
+        args incDir.absolutePath, file('assets/Interface').absolutePath
+        if (project.hasProperty('raw')) args project.property('raw')
+    }
+}
+
+// viewVectObj : viewer 3D interactif pour les .j3o vectobj avec animations
+// Usage : ./gradlew viewVectObj                    # premier modele de la liste
+//         ./gradlew viewVectObj -Pmodel=rifle      # modele specifique
+// Controles : [<-/->] changer modele, [Space] play/pause, [+/-] FPS,
+//             [N/B] step frame, [R] reset cam, [G] grille, [W] wireframe,
+//             [A] auto-rotation, drag souris = orbit, molette = zoom
+tasks.register('viewVectObj', JavaExec) {
+    group='ab3d2'; description='Viewer 3D pour inspecter les modeles vectobj et leurs animations'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.VectObjViewer'
+    jvmArgs    = ['--enable-preview', '-Xmx512m']
+    if (System.getProperty("os.name").toLowerCase().contains("mac"))
+        jvmArgs += ['-XstartOnFirstThread']
+    standardInput = System.in
+    doFirst {
+        def vectDir = file('assets/Scenes/vectobj')
+        if (!vectDir.isDirectory() || (vectDir.listFiles()?.count{it.name.endsWith('.j3o')}?:0)==0)
+            throw new GradleException("Aucun .j3o dans assets/Scenes/vectobj - lancer 'gradlew convertVectObj' d'abord")
+        if (project.hasProperty('model')) args project.property('model')
+    }
+}
+
 // ── setupAll : pipeline complet ───────────────────────────────────────────────
 // Ordre : copyResources -> convertAssets -> convertLevels -> convertSounds -> buildScenes
 // Note: convertWads est optionnel (necessite les fichiers WAD du jeu original)
 tasks.register('setupAll') {
     group='ab3d2'; description='Pipeline complet de conversion'
     dependsOn 'copyResources','convertAssets','convertLevels','convertSounds','buildScenes'
+}
+
+// ── levelInspect : audit des donnees enrichies (session 99) ───────────────────
+// Affiche un rapport humain-readable des messages, control points, teleporteurs,
+// zones a 2 niveaux (mezzanines), zones water, doors/lifts/switches.
+// Usage : ./gradlew levelInspect              # Tous les niveaux
+//         ./gradlew levelInspect -Plevel=A    # Un seul niveau
+tasks.register('levelInspect', JavaExec) {
+    group='ab3d2'; description='Rapport detaille des donnees de niveau (telep, water, upper, etc.)'
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass  = 'com.ab3d2.tools.LevelInspector'
+    jvmArgs    = ['--enable-preview', '-Xmx256m']
+    standardOutput = System.out
+    doFirst {
+        args file('assets/levels').absolutePath
+        if (project.hasProperty('level')) args project.property('level')
+    }
 }
 tasks.named('convertAssets') { mustRunAfter('copyResources') }
 tasks.named('convertLevels') { mustRunAfter('convertAssets') }
@@ -188,6 +606,7 @@ tasks.register('cleanResources', Delete) {
 }
 
 compileJava { options.compilerArgs += ['--enable-preview'] }
+compileTestJava { options.compilerArgs += ['--enable-preview'] }
 jar { manifest { attributes 'Main-Class': application.mainClass } }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 wrapper { gradleVersion = '8.6' }

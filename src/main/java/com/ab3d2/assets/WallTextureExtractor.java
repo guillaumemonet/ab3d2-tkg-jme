@@ -46,12 +46,50 @@ public class WallTextureExtractor {
 
     // Calcule la largeur depuis taille fichier + hauteur connue
     // chunkBytes = numGroups * texH * 2 ;  numGroups = (texW+2)/3
+    //
+    // <p>Session 92 : correction du bug "2 pixels too wide". Le format .256wad
+    // stocke les pixels 3-par-3 dans des WORDs 16 bits. Pour une texture de
+    // 256 px on a ceil(256/3) = 86 groupes = 258 px lors du decodage inverse
+    // (les 2 derniers pixels sont des pixels de padding sans valeur visuelle).
+    // On doit donc arrondir la largeur calculee au multiple de 16 inferieur
+    // (les textures Amiga sont toujours alignees sur 16 px dans ce jeu).</p>
     public static int computeWidth(int fileSize, int texH) {
         if (texH <= 0) return 0;
         int chunkBytes = fileSize - SHADE_TABLE_BYTES - 2;  // -2 = footer height word
         if (chunkBytes <= 0) return 0;
         if (chunkBytes % (texH * 2) != 0) return 0;
-        return (chunkBytes / (texH * 2)) * 3;  // numGroups * 3
+        int rawWidth = (chunkBytes / (texH * 2)) * 3;
+        // Arrondir au multiple de 16 inferieur pour retrouver la vraie largeur
+        // visuelle (sans les 0, 1 ou 2 pixels de padding du groupe de 3).
+        // Les textures valides dans AB3D2 sont : 16, 32, 48, 64, 128, 256, 512,
+        // 640 px (toutes multiples de 16).
+        return snapToAmigaWidth(rawWidth);
+    }
+
+    /**
+     * Arrondit une largeur brute au multiple de 16 inferieur,
+     * en supposant qu'au plus 2 pixels de padding sont ajoutes par le
+     * format .256wad (groupes de 3 pixels).
+     *
+     * <pre>
+     *   256 -> 256   258 -> 256   257 -> 256
+     *   128 -> 128   129 -> 128   130 -> 128
+     *   512 -> 512   513 -> 512   514 -> 512
+     *   640 -> 640   642 -> 640
+     *    64 ->  64   195 -> 192 (stonewall)
+     * </pre>
+     */
+    static int snapToAmigaWidth(int rawWidth) {
+        // Si deja multiple de 16, rien a faire
+        if (rawWidth % 16 == 0) return rawWidth;
+        // Sinon, ecart de 1 ou 2 max attendu -> arrondi inferieur a 16
+        int snapped = (rawWidth / 16) * 16;
+        // Si l'ecart est > 2 (eg 195 -> 192, ecart 3), on accepte quand meme :
+        // c'est probablement une texture legerement non-conventionnelle.
+        // Le test est : rawWidth - snapped <= 3
+        if (rawWidth - snapped <= 3) return snapped;
+        // Cas tres exceptionnel : on garde la valeur originale (fallback).
+        return rawWidth;
     }
 
     public WadTextureData load(Path path) throws IOException {

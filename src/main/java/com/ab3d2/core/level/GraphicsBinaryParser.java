@@ -64,6 +64,7 @@ public class GraphicsBinaryParser {
             bd.plr1StartX, bd.plr1StartZ, bd.plr1StartZoneId,
             bd.plr2StartX, bd.plr2StartZ, bd.plr2StartZoneId,
             bd.controlPoints, bd.points, bd.edges, zones,
+            bd.exitZoneId,
             bd.numObjects, binRaw.length, graphRaw.length);
     }
 

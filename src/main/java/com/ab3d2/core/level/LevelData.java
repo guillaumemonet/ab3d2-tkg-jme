@@ -17,6 +17,9 @@ public class LevelData {
     public final ZEdge[]    edges;
     public final ZoneData[] zones;
 
+    /** Zone de sortie du niveau (entree = endlevel). Voir {@link LevelBinaryParser.BinData#exitZoneId}. Session 110. */
+    public final int exitZoneId;
+
     public final int numObjects;
     public final int rawBinSize, rawGraphSize;
 
@@ -25,6 +28,7 @@ public class LevelData {
                      short plr2StartX, short plr2StartZ, int plr2StartZoneId,
                      Vec2W[] controlPoints, Vec2W[] points,
                      ZEdge[] edges, ZoneData[] zones,
+                     int exitZoneId,
                      int numObjects, int rawBinSize, int rawGraphSize) {
         this.levelId         = levelId;
         this.plr1StartX      = plr1StartX;
@@ -37,6 +41,7 @@ public class LevelData {
         this.points          = points;
         this.edges           = edges;
         this.zones           = zones;
+        this.exitZoneId      = exitZoneId;
         this.numObjects      = numObjects;
         this.rawBinSize      = rawBinSize;
         this.rawGraphSize    = rawGraphSize;
